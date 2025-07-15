@@ -2,41 +2,79 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/* AI Traffic Management System Design System */
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Core Background & Foreground */
+    --background: 220 13% 9%;
+    --foreground: 220 14% 93%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    /* Card System */
+    --card: 220 13% 11%;
+    --card-foreground: 220 14% 93%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    /* Popover System */
+    --popover: 220 13% 11%;
+    --popover-foreground: 220 14% 93%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* Primary - Traffic Control Blue */
+    --primary: 200 98% 39%;
+    --primary-foreground: 220 14% 93%;
+    --primary-glow: 200 98% 60%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Secondary - System Gray */
+    --secondary: 220 13% 16%;
+    --secondary-foreground: 220 14% 93%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Muted System */
+    --muted: 220 13% 16%;
+    --muted-foreground: 220 9% 60%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* Accent - Tech Teal */
+    --accent: 180 78% 35%;
+    --accent-foreground: 220 14% 93%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    /* Success - Traffic Green */
+    --success: 142 76% 36%;
+    --success-foreground: 220 14% 93%;
+    --success-glow: 142 76% 50%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    /* Warning - Traffic Amber */
+    --warning: 45 93% 58%;
+    --warning-foreground: 220 13% 9%;
 
-    --radius: 0.5rem;
+    /* Destructive - Traffic Red */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 220 14% 93%;
+
+    /* Border & Input */
+    --border: 220 13% 20%;
+    --input: 220 13% 16%;
+    --ring: 200 98% 39%;
+
+    /* Radius */
+    --radius: 0.75rem;
+
+    /* Traffic System Colors */
+    --traffic-green: 142 76% 36%;
+    --traffic-amber: 45 93% 58%;
+    --traffic-red: 0 84% 60%;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)));
+    --gradient-success: linear-gradient(135deg, hsl(var(--success)), hsl(var(--success-glow)));
+    --gradient-bg: linear-gradient(135deg, hsl(var(--background)), hsl(220 13% 12%));
+    --gradient-card: linear-gradient(135deg, hsl(var(--card)), hsl(220 13% 13%));
+
+    /* Shadows */
+    --shadow-glow: 0 0 30px hsl(var(--primary) / 0.3);
+    --shadow-success: 0 0 20px hsl(var(--success) / 0.3);
+    --shadow-card: 0 8px 32px hsl(220 13% 4% / 0.6);
+
+    /* Animation Curves */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 
     --sidebar-background: 0 0% 98%;
 
