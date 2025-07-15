@@ -109,7 +109,7 @@ export const TrafficUpload: React.FC<TrafficUploadProps> = ({
               onDragOver={handleDrag}
               onDrop={handleDrop}
             >
-              <input
+             <input
                 type="file"
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 accept="image/*"
@@ -135,7 +135,7 @@ export const TrafficUpload: React.FC<TrafficUploadProps> = ({
                   Supports: JPG, PNG, GIF, WebP • Max size: 10MB
                 </div>
               </div>
-            </div>
+              </div>
           ) : (
             <div className="space-y-4">
               <div className="relative rounded-lg overflow-hidden bg-muted">

@@ -19,34 +19,36 @@ export const TrafficDashboard: React.FC = () => {
   const [results, setResults] = useState<DetectionResult | null>(null);
 
   const simulateAIProcessing = (file: File): Promise<DetectionResult> => {
-    return new Promise((resolve) => {
-      // Simulate processing with progress updates
-      let currentProgress = 0;
-      const progressInterval = setInterval(() => {
-        currentProgress += Math.random() * 15;
-        if (currentProgress >= 100) {
-          clearInterval(progressInterval);
-          setProgress(100);
-          
-          // Simulate AI results based on file name or random generation
-          const vehicleCount = Math.floor(Math.random() * 25) + 1;
-          const baseTime = 30;
-          const signalTime = Math.max(baseTime + (vehicleCount * 2), 20);
-          
-          // Create a mock detected image URL (in real app, this would come from backend)
-          const detectedImage = URL.createObjectURL(file);
-          
-          resolve({
-            vehicleCount,
-            signalTime,
-            detectedImage
-          });
-        } else {
-          setProgress(currentProgress);
-        }
-      }, 200);
-    });
-  };
+  return new Promise(async (resolve, reject) => {
+    try {
+      setProgress(20); // optional intermediate progress
+
+      const formData = new FormData();
+      formData.append("image", file);
+
+      const response = await fetch("http://localhost:5000/api/detect", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("AI detection failed");
+      }
+
+      const data = await response.json();
+
+      setProgress(100);
+      resolve({
+        vehicleCount: data.vehicleCount,
+        signalTime: data.signalTime,
+        detectedImage: `http://localhost:5000${data.detectedImage}`,  // Annotated result
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
+};
+
 
   const handleFileUpload = async (file: File) => {
     setAppState('processing');
