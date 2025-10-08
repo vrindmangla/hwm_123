@@ -3,6 +3,7 @@ from flask_cors import CORS
 import os
 import uuid
 from ultralytics import YOLO
+import torch
 from PIL import Image
 import cv2
 from typing import Optional
@@ -24,6 +25,33 @@ os.makedirs(RESULT_FOLDER, exist_ok=True)
 model_coco = YOLO("yolov8n.pt")        # Pretrained COCO model
 model_custom = YOLO("best.pt")         # Your custom retrained model # You can replace with 'yolov8m.pt', 'yolov8s.pt' or custom weights
 
+# Optimize models for available hardware
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+try:
+    model_coco.to(DEVICE)
+    model_custom.to(DEVICE)
+    # Fuse layers for faster inference where supported
+    try:
+        model_coco.fuse()
+    except Exception:
+        pass
+    try:
+        model_custom.fuse()
+    except Exception:
+        pass
+    # Enable half precision on CUDA for speed
+    if DEVICE == "cuda":
+        try:
+            model_coco.model.half()
+        except Exception:
+            pass
+        try:
+            model_custom.model.half()
+        except Exception:
+            pass
+except Exception:
+    DEVICE = "cpu"
+
 # Initialize stream processor for live metrics
 stream_processor = StreamProcessor(model_coco)
 
@@ -41,11 +69,24 @@ def detect():
     filepath = os.path.join(UPLOAD_FOLDER, filename)
     file.save(filepath)
 
-    # Run YOLOv8 detection
-    results_coco = model_coco(filepath)[0]
-    results_custom = model_custom(filepath)[0]
-
+    # Run YOLOv8 detection (smaller imgsz, filtered classes, proper device)
     vehicle_classes = {2, 3, 5, 7}
+    results_coco = model_coco.predict(
+        filepath,
+        imgsz=512,
+        conf=0.3,
+        classes=list(vehicle_classes),
+        device=DEVICE,
+        verbose=False,
+    )[0]
+    results_custom = model_custom.predict(
+        filepath,
+        imgsz=512,
+        conf=0.25,
+        device=DEVICE,
+        verbose=False,
+    )[0]
+
     vehicle_count = sum(1 for cls in results_coco.boxes.cls if int(cls) in vehicle_classes)
 
     emergency_classes = {80, 81}  # assuming your custom model labels are 0: ambulance, 1: fire truck

@@ -9,6 +9,7 @@ from typing import Deque, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 from ultralytics import YOLO
+import torch
 
 
 class StreamSession:
@@ -74,8 +75,15 @@ class StreamSession:
                 if scale < 1.0:
                     frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
 
-                # Run YOLO detection
-                results = self.model_coco.predict(frame, verbose=False)[0]
+                # Run YOLO detection (smaller imgsz, class filter, explicit device)
+                results = self.model_coco.predict(
+                    frame,
+                    imgsz=512,
+                    conf=0.3,
+                    classes=list(self.vehicle_classes),
+                    device=("cuda" if torch.cuda.is_available() else "cpu"),
+                    verbose=False,
+                )[0]
                 current_vehicle_count = int(sum(1 for cls in results.boxes.cls if int(cls) in self.vehicle_classes))
 
                 # Accumulate per-second bucket
@@ -202,7 +210,8 @@ class StreamProcessor:
 
 def analyze_video_file(model_coco: YOLO, source_path: str, vehicle_classes: Optional[set] = None,
                        target_fps: float = 5.0, slope_window_seconds: int = 12,
-                       annotated_output_path: Optional[str] = None) -> Dict[str, float]:
+                       annotated_output_path: Optional[str] = None,
+                       max_seconds: Optional[int] = 12) -> Dict[str, float]:
     """
     Offline analysis for an uploaded video file. Returns summary metrics including
     vehiclesPerSecond (EMA) and rateOfChange (slope of cps over time).
@@ -233,6 +242,7 @@ def analyze_video_file(model_coco: YOLO, source_path: str, vehicle_classes: Opti
     stride = max(1, int(round(float(video_fps) / max(1.0, float(target_fps)))))
 
     try:
+        processed_seconds = 0
         while True:
             # Read one frame to process
             ok, frame = cap.read()
@@ -252,9 +262,10 @@ def analyze_video_file(model_coco: YOLO, source_path: str, vehicle_classes: Opti
             if process_this_frame:
                 results = model_coco.predict(
                     frame,
-                    imgsz=640,
+                    imgsz=512,
                     conf=0.3,
                     classes=list(vehicle_classes),
+                    device=("cuda" if torch.cuda.is_available() else "cpu"),
                     verbose=False,
                 )[0]
                 detected_count = int(sum(1 for cls in results.boxes.cls if int(cls) in vehicle_classes))
@@ -317,9 +328,14 @@ def analyze_video_file(model_coco: YOLO, source_path: str, vehicle_classes: Opti
                 per_second_counts.append((float(current_second_index), float(ema_cps)))
 
                 # reset for next second bucket
+                processed_seconds += 1
                 current_second_index = second_index
                 frame_counts_accumulator = 0
                 frames_in_bucket = 0
+
+                # Early exit to reduce latency on long videos
+                if max_seconds is not None and processed_seconds >= int(max_seconds):
+                    break
 
             # Skip the next stride-1 frames quickly without decoding to keep speed high
             for _ in range(stride - 1):
@@ -327,6 +343,8 @@ def analyze_video_file(model_coco: YOLO, source_path: str, vehicle_classes: Opti
                 frame_index += 1  # advance timestamp for skipped frames
                 if not grabbed:
                     break
+            if max_seconds is not None and processed_seconds >= int(max_seconds):
+                break
     finally:
         cap.release()
         if writer is not None:
