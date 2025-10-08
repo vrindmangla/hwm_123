@@ -6,9 +6,10 @@ import { SystemStatus } from './SystemStatus';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface DetectionResult {
-  vehicleCount: number;
   signalTime: number;
-  detectedImage: string;
+  vehiclesPerSecond?: number;
+  rateOfChange?: number;
+  annotatedVideo?: string;
 }
 
 type AppState = 'upload' | 'processing' | 'results';
@@ -18,31 +19,46 @@ export const TrafficDashboard: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<DetectionResult | null>(null);
 
-  const simulateAIProcessing = (file: File): Promise<DetectionResult> => {
+  const computeOptimizedGreenTime = (baseSeconds: number, rateOfChange?: number): number => {
+    if (rateOfChange === undefined || rateOfChange === null || isNaN(rateOfChange)) {
+      return baseSeconds;
+    }
+    const scaleSecondsPerSlopeUnit = 10; // K = 10 seconds per (vehicles/sec²)
+    const unclamped = baseSeconds + rateOfChange * scaleSecondsPerSlopeUnit;
+    const clamped = Math.max(15, Math.min(65, unclamped));
+    return Math.round(clamped);
+  };
+
+  const simulateAIProcessing = (video: File | null): Promise<DetectionResult> => {
   return new Promise(async (resolve, reject) => {
     try {
       setProgress(20); // optional intermediate progress
 
-      const formData = new FormData();
-      formData.append("image", file);
-
-      const response = await fetch("http://localhost:5000/api/detect", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error("AI detection failed");
+      if (!video) {
+        throw new Error("No video provided");
       }
 
-      const data = await response.json();
+      const vForm = new FormData();
+      vForm.append("video", video);
+      const vResp = await fetch("http://localhost:5000/api/video/analyze", {
+        method: "POST",
+        body: vForm,
+      });
+      if (!vResp.ok) {
+        throw new Error("Video analysis failed");
+      }
+      const vData = await vResp.json();
 
       setProgress(100);
-      resolve({
-        vehicleCount: data.vehicleCount,
-        signalTime: data.signalTime,
-        detectedImage: `http://localhost:5000${data.detectedImage}`,  // Annotated result
-      });
+      const optimized = computeOptimizedGreenTime(35, vData.rateOfChange);
+      const baseResult: DetectionResult = {
+        vehiclesPerSecond: vData.vehiclesPerSecond,
+        rateOfChange: vData.rateOfChange,
+        signalTime: optimized,
+        annotatedVideo: vData.annotatedVideo ? `http://localhost:5000${vData.annotatedVideo}` : undefined,
+      };
+
+      resolve(baseResult);
     } catch (error) {
       reject(error);
     }
@@ -50,12 +66,12 @@ export const TrafficDashboard: React.FC = () => {
 };
 
 
-  const handleFileUpload = async (file: File) => {
+  const handleFileUpload = async (video: File | null) => {
     setAppState('processing');
     setProgress(0);
     
     try {
-      const result = await simulateAIProcessing(file);
+      const result = await simulateAIProcessing(video);
       setResults(result);
       setAppState('results');
     } catch (error) {
@@ -153,9 +169,10 @@ export const TrafficDashboard: React.FC = () => {
 
             {appState === 'results' && results && (
               <TrafficResults
-                vehicleCount={results.vehicleCount}
                 signalTime={results.signalTime}
-                detectedImage={results.detectedImage}
+                vehiclesPerSecond={results.vehiclesPerSecond}
+                rateOfChange={results.rateOfChange}
+                annotatedVideo={results.annotatedVideo}
                 onReset={handleReset}
               />
             )}

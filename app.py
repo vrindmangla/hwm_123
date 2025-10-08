@@ -1,10 +1,13 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, send_file, Response
 from flask_cors import CORS
 import os
 import uuid
 from ultralytics import YOLO
 from PIL import Image
 import cv2
+from typing import Optional
+
+from stream_processor import StreamProcessor, analyze_video_file
 
 
 # Initialize Flask app
@@ -20,6 +23,9 @@ os.makedirs(RESULT_FOLDER, exist_ok=True)
 # Load YOLOv8 model (use yolov8n.pt or your trained weights)
 model_coco = YOLO("yolov8n.pt")        # Pretrained COCO model
 model_custom = YOLO("best.pt")         # Your custom retrained model # You can replace with 'yolov8m.pt', 'yolov8s.pt' or custom weights
+
+# Initialize stream processor for live metrics
+stream_processor = StreamProcessor(model_coco)
 
 @app.route('/api/detect', methods=['POST'])
 def detect():
@@ -97,7 +103,109 @@ def detect():
 
 @app.route('/results/<path:filename>')
 def serve_result(filename):
-    return send_from_directory(RESULT_FOLDER, filename)
+    path = os.path.join(RESULT_FOLDER, filename)
+    if not os.path.exists(path):
+        return jsonify({"error": "File not found"}), 404
+
+    range_header = request.headers.get('Range', None)
+    if not range_header:
+        # Fallback full send
+        return send_file(path)
+
+    # Support HTTP Range requests for proper video streaming
+    size = os.path.getsize(path)
+    byte1, byte2 = 0, None
+    try:
+        # Example: Range: bytes=0-1023
+        match = range_header.strip().lower().split('=')[-1]
+        if '-' in match:
+            start_str, end_str = match.split('-')
+            if start_str.strip():
+                byte1 = int(start_str)
+            if end_str.strip():
+                byte2 = int(end_str)
+    except Exception:
+        byte1, byte2 = 0, None
+
+    if byte2 is None or byte2 >= size:
+        byte2 = size - 1
+    length = byte2 - byte1 + 1
+
+    with open(path, 'rb') as f:
+        f.seek(byte1)
+        data = f.read(length)
+
+    rv = Response(data, 206, mimetype='video/mp4', direct_passthrough=True)
+    rv.headers.add('Content-Range', f'bytes {byte1}-{byte2}/{size}')
+    rv.headers.add('Accept-Ranges', 'bytes')
+    rv.headers.add('Content-Length', str(length))
+    return rv
+
+
+@app.route('/api/stream/start', methods=['POST'])
+def stream_start():
+    data = request.get_json(silent=True) or {}
+    source = data.get('source')
+    if source is None:
+        return jsonify({"error": "Missing 'source' (e.g., 0 for webcam or RTSP/HTTP URL)"}), 400
+    session_id = stream_processor.start_session(str(source))
+    return jsonify({"sessionId": session_id})
+
+
+@app.route('/api/stream/metrics', methods=['GET'])
+def stream_metrics():
+    session_id = request.args.get('sessionId')
+    if not session_id:
+        return jsonify({"error": "Missing 'sessionId'"}), 400
+    metrics = stream_processor.get_metrics(session_id)
+    if metrics is None:
+        return jsonify({"error": "Session not found"}), 404
+    return jsonify(metrics)
+
+
+@app.route('/api/stream/stop', methods=['POST'])
+def stream_stop():
+    data = request.get_json(silent=True) or {}
+    session_id = data.get('sessionId')
+    if not session_id:
+        return jsonify({"error": "Missing 'sessionId'"}), 400
+    ok = stream_processor.stop_session(session_id)
+    if not ok:
+        return jsonify({"error": "Session not found"}), 404
+    return jsonify({"stopped": True})
+
+
+@app.route('/api/video/analyze', methods=['POST'])
+def analyze_video():
+    if 'video' not in request.files:
+        return jsonify({'error': 'No video part in request'}), 400
+
+    file = request.files['video']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    filename = f"{uuid.uuid4().hex}.mp4"
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    file.save(filepath)
+
+    # Prepare annotated output path
+    base_annotated = f"{os.path.splitext(filename)[0]}_annotated.mp4"
+    annotated_path = os.path.join(RESULT_FOLDER, base_annotated)
+
+    metrics = analyze_video_file(model_coco, filepath, annotated_output_path=annotated_path)
+    # Only return annotated video URL if file exists, has size, and frames were written
+    try:
+        path_from_writer = metrics.get("annotatedOutputPath") or annotated_path
+        if (
+            os.path.exists(path_from_writer)
+            and os.path.getsize(path_from_writer) > 0
+            and int(metrics.get("annotatedFrames", 0)) > 0
+        ):
+            # Map absolute path to /results route
+            metrics["annotatedVideo"] = f"/results/{os.path.basename(path_from_writer)}"
+    except Exception:
+        pass
+    return jsonify(metrics)
 
 if __name__ == '__main__':
     app.run(debug=True)

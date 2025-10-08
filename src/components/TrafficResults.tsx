@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Car, Clock, TrendingUp, ArrowLeft, AlertTriangle, CheckCircle, Timer } from 'lucide-react';
+import { TrendingUp, ArrowLeft, AlertTriangle, CheckCircle, Timer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -8,16 +8,18 @@ import { TrafficLight } from './TrafficLight';
 import { StatsCard } from './StatsCard';
 
 interface TrafficResultsProps {
-  vehicleCount: number;
   signalTime: number;
-  detectedImage: string;
+  vehiclesPerSecond?: number;
+  rateOfChange?: number;
+  annotatedVideo?: string;
   onReset: () => void;
 }
 
 export const TrafficResults: React.FC<TrafficResultsProps> = ({
-  vehicleCount,
   signalTime,
-  detectedImage,
+  vehiclesPerSecond,
+  rateOfChange,
+  annotatedVideo,
   onReset
 }) => {
   const [timeLeft, setTimeLeft] = useState(signalTime);
@@ -57,13 +59,6 @@ export const TrafficResults: React.FC<TrafficResultsProps> = ({
     return () => clearInterval(timer);
   }, [timeLeft]);
 
-  const getDensityLevel = (count: number): { level: string; color: 'primary' | 'success' | 'warning' | 'destructive'; intensity: string } => {
-    if (count <= 5) return { level: 'Low', color: 'success', intensity: 'light' };
-    if (count <= 15) return { level: 'Medium', color: 'warning', intensity: 'moderate' };
-    return { level: 'High', color: 'destructive', intensity: 'heavy' };
-  };
-
-  const density = getDensityLevel(vehicleCount);
   const progressPercentage = ((signalTime - timeLeft) / signalTime) * 100;
 
   const handleNewAnalysis = () => {
@@ -101,26 +96,18 @@ export const TrafficResults: React.FC<TrafficResultsProps> = ({
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatsCard
-          title="Vehicles Detected"
-          value={vehicleCount}
-          icon={<Car className="w-6 h-6" />}
-          trend="+12% from last scan"
+          title="Rate of Change"
+          value={typeof rateOfChange === 'number' ? rateOfChange.toFixed(3) : '—'}
+          icon={<TrendingUp className="w-6 h-6" />}
+          trend="vehicles/sec²"
           color="primary"
         />
         
         <StatsCard
-          title="Traffic Density"
-          value={density.level}
-          icon={<TrendingUp className="w-6 h-6" />}
-          trend={`${density.intensity} traffic flow`}
-          color={density.color}
-        />
-        
-        <StatsCard
-          title="Signal Duration"
+          title="Optimized Green Time"
           value={`${signalTime}s`}
-          icon={<Clock className="w-6 h-6" />}
-          trend="Optimized timing"
+          icon={<Timer className="w-6 h-6" />}
+          trend="based on rate-of-change"
           color="success"
         />
       </div>
@@ -131,7 +118,7 @@ export const TrafficResults: React.FC<TrafficResultsProps> = ({
         <Card className="bg-gradient-card border-border shadow-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Timer className="w-5 h-5" />
+            <Timer className="w-5 h-5" />
               Traffic Signal Control
             </CardTitle>
           </CardHeader>
@@ -170,35 +157,19 @@ export const TrafficResults: React.FC<TrafficResultsProps> = ({
           </CardContent>
         </Card>
 
-        {/* Detected Image */}
+        {/* Annotated Video */}
         <Card className="bg-gradient-card border-border shadow-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Car className="w-5 h-5" />
-              Vehicle Detection Results
+              Annotated Detection Video
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="relative rounded-lg overflow-hidden bg-muted">
-              <img
-                src={detectedImage}
-                alt="Detected vehicles"
-                className="w-full h-80 object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-              
-              <div className="absolute bottom-4 left-4 right-4">
-                <div className="flex items-center justify-between text-white">
-                  <div className="flex items-center gap-2">
-                    <Car className="w-4 h-4" />
-                    <span className="font-medium">{vehicleCount} vehicles detected</span>
-                  </div>
-                  <Badge className="bg-primary">
-                    AI Processed
-                  </Badge>
-                </div>
-              </div>
-            </div>
+            {annotatedVideo ? (
+              <video src={annotatedVideo} className="w-full h-80 object-cover" controls />
+            ) : (
+              <div className="text-sm text-muted-foreground">Annotated video will appear here after processing.</div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -211,7 +182,7 @@ export const TrafficResults: React.FC<TrafficResultsProps> = ({
             <div>
               <h3 className="font-semibold text-warning">Signal Cycle Complete</h3>
               <p className="text-muted-foreground">
-                Ready for next traffic image analysis
+                Ready for next traffic video analysis
               </p>
             </div>
             <Button
