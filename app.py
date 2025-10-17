@@ -7,6 +7,7 @@ import torch
 from PIL import Image
 import cv2
 from typing import Optional
+from datetime import datetime
 
 from stream_processor import StreamProcessor, analyze_video_file
 
@@ -233,7 +234,13 @@ def analyze_video():
     base_annotated = f"{os.path.splitext(filename)[0]}_annotated.mp4"
     annotated_path = os.path.join(RESULT_FOLDER, base_annotated)
 
-    metrics = analyze_video_file(model_coco, filepath, annotated_output_path=annotated_path)
+    metrics = analyze_video_file(
+        model_coco,
+        filepath,
+        annotated_output_path=annotated_path,
+        target_fps=4.0,
+        max_seconds=8,
+    )
     # Only return annotated video URL if file exists, has size, and frames were written
     try:
         path_from_writer = metrics.get("annotatedOutputPath") or annotated_path
@@ -246,7 +253,182 @@ def analyze_video():
             metrics["annotatedVideo"] = f"/results/{os.path.basename(path_from_writer)}"
     except Exception:
         pass
+    # Compute signal time: 33 + 10*rate + 2*(vehicleCount-10) + time_effect, clamped 15-65
+    try:
+        rate = float(metrics.get('rateOfChange', 0.0))
+    except Exception:
+        rate = 0.0
+    try:
+        vcount = int(metrics.get('vehicleCount', 0))
+    except Exception:
+        vcount = 0
+    hour = datetime.now().hour
+    if (8 <= hour <= 11) or (18 <= hour <= 22):
+        time_effect = 3
+    elif (hour >= 22) or (hour <= 7):
+        time_effect = -3
+    else:
+        time_effect = 0
+    raw_time = 33 + (10 * rate) + 2 * (vcount - 10) + time_effect
+    try:
+        st = int(round(raw_time))
+    except Exception:
+        st = 33
+    metrics['signalTime'] = max(15, min(65, st))
     return jsonify(metrics)
+
+
+@app.route('/api/video/analyze-multi', methods=['POST'], endpoint='analyze_video_multi_v1')
+def analyze_video_multi_v1():
+    # Accept up to 4 files with compass keys; fall back to lane1..lane4 for compatibility
+    compass_keys = [('north', 1), ('south', 2), ('east', 3), ('west', 4)]
+    legacy_keys = ['lane1', 'lane2', 'lane3', 'lane4']
+
+    provided: list = []  # items: (direction: str, src_path: str, annotated_path: str)
+
+    # Prefer compass keys if present
+    any_compass = any(request.files.get(k) for k, _ in compass_keys)
+    if any_compass:
+        for dir_key, idx in compass_keys:
+            file = request.files.get(dir_key)
+            if file and file.filename:
+                filename = f"{uuid.uuid4().hex}_{dir_key}.mp4"
+                filepath = os.path.join(UPLOAD_FOLDER, filename)
+                file.save(filepath)
+                base_annotated = f"{os.path.splitext(filename)[0]}_annotated.mp4"
+                annotated_path = os.path.join(RESULT_FOLDER, base_annotated)
+                provided.append((dir_key, filepath, annotated_path))
+    else:
+        # Fallback legacy mapping lane1..4 -> north,south,east,west
+        map_legacy = {0: 'north', 1: 'south', 2: 'east', 3: 'west'}
+        for i, key in enumerate(legacy_keys):
+            file = request.files.get(key)
+            if file and file.filename:
+                dir_key = map_legacy.get(i, f'lane{i+1}')
+                filename = f"{uuid.uuid4().hex}_{dir_key}.mp4"
+                filepath = os.path.join(UPLOAD_FOLDER, filename)
+                file.save(filepath)
+                base_annotated = f"{os.path.splitext(filename)[0]}_annotated.mp4"
+                annotated_path = os.path.join(RESULT_FOLDER, base_annotated)
+                provided.append((dir_key, filepath, annotated_path))
+
+    if not provided:
+        return jsonify({'error': 'No videos provided. Send files as north/south/east/west'}), 400
+
+    lanes_out = []
+    for direction, src_path, ann_path in provided:
+        metrics = analyze_video_file(model_coco, src_path, annotated_output_path=ann_path)
+        try:
+            path_from_writer = metrics.get("annotatedOutputPath") or ann_path
+            if (
+                os.path.exists(path_from_writer)
+                and os.path.getsize(path_from_writer) > 0
+                and int(metrics.get("annotatedFrames", 0)) > 0
+            ):
+                metrics["annotatedVideo"] = f"/results/{os.path.basename(path_from_writer)}"
+        except Exception:
+            pass
+
+        # Compute per-direction green time using new formula
+        try:
+            rate = float(metrics.get('rateOfChange', 0.0))
+        except Exception:
+            rate = 0.0
+        try:
+            vcount = int(metrics.get('vehicleCount', 0))
+        except Exception:
+            vcount = 0
+        hour = datetime.now().hour
+        if (8 <= hour <= 11) or (18 <= hour <= 22):
+            time_effect = 3
+        elif (hour >= 22) or (hour <= 7):
+            time_effect = -3
+        else:
+            time_effect = 0
+        raw_time = 33 + (10 * rate) + 2 * (vcount - 10) + time_effect
+        try:
+            signal_time = int(round(raw_time))
+        except Exception:
+            signal_time = 33
+        signal_time = max(15, min(65, signal_time))
+
+        lanes_out.append({
+            'direction': direction,
+            'vehiclesPerSecond': metrics.get('vehiclesPerSecond', 0.0),
+            'rateOfChange': metrics.get('rateOfChange', 0.0),
+            'vehicleCount': metrics.get('vehicleCount', 0),
+            'signalTime': signal_time,
+            'annotatedVideo': metrics.get('annotatedVideo')
+        })
+
+    # Enforce same timing within pairs: NS and EW use the greater of the pair
+    by_dir = {item['direction']: item for item in lanes_out}
+    ns = [by_dir.get('north'), by_dir.get('south')]
+    ew = [by_dir.get('east'), by_dir.get('west')]
+    def max_pair(pair):
+        vals = [p['signalTime'] for p in pair if p]
+        return max(vals) if vals else None
+    ns_max = max_pair(ns)
+    ew_max = max_pair(ew)
+    if ns_max is not None:
+        for p in ns:
+            if p is not None:
+                p['signalTime'] = ns_max
+    if ew_max is not None:
+        for p in ew:
+            if p is not None:
+                p['signalTime'] = ew_max
+
+    # Sort in compass order
+    order = {'north': 0, 'west': 1, 'east': 2, 'south': 3}
+    lanes_out.sort(key=lambda x: order.get(x.get('direction', ''), 99))
+    return jsonify({ 'lanes': lanes_out })
+
+
+@app.route('/api/video/analyze-multi', methods=['POST'])
+def analyze_video_multi():
+    # Expect up to 4 files: lane1, lane2, lane3, lane4
+    lanes = []
+    for idx in range(1, 5):
+        key = f'lane{idx}'
+        if key in request.files and request.files[key].filename != '':
+            file = request.files[key]
+            filename = f"{uuid.uuid4().hex}.mp4"
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            file.save(filepath)
+
+            base_annotated = f"{os.path.splitext(filename)[0]}_annotated.mp4"
+            annotated_path = os.path.join(RESULT_FOLDER, base_annotated)
+
+            metrics = analyze_video_file(model_coco, filepath, annotated_output_path=annotated_path)
+            try:
+                path_from_writer = metrics.get("annotatedOutputPath") or annotated_path
+                if (
+                    os.path.exists(path_from_writer)
+                    and os.path.getsize(path_from_writer) > 0
+                    and int(metrics.get("annotatedFrames", 0)) > 0
+                ):
+                    metrics["annotatedVideo"] = f"/results/{os.path.basename(path_from_writer)}"
+            except Exception:
+                pass
+
+            lanes.append({
+                "lane": idx,
+                "vehiclesPerSecond": metrics.get("vehiclesPerSecond", 0.0),
+                "rateOfChange": metrics.get("rateOfChange", 0.0),
+                "vehicleCount": metrics.get("vehicleCount", 0),
+                "annotatedVideo": metrics.get("annotatedVideo", None),
+            })
+        else:
+            lanes.append({
+                "lane": idx,
+                "vehiclesPerSecond": 0.0,
+                "rateOfChange": 0.0,
+                "vehicleCount": 0,
+                "annotatedVideo": None,
+            })
+
+    return jsonify({"lanes": lanes})
 
 if __name__ == '__main__':
     app.run(debug=True)

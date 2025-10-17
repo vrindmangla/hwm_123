@@ -13,6 +13,7 @@ interface TrafficResultsProps {
   rateOfChange?: number;
   annotatedVideo?: string;
   onReset: () => void;
+  vehicleCount?: number;
 }
 
 export const TrafficResults: React.FC<TrafficResultsProps> = ({
@@ -20,7 +21,8 @@ export const TrafficResults: React.FC<TrafficResultsProps> = ({
   vehiclesPerSecond,
   rateOfChange,
   annotatedVideo,
-  onReset
+  onReset,
+  vehicleCount
 }) => {
   const [timeLeft, setTimeLeft] = useState(signalTime);
   const [currentPhase, setCurrentPhase] = useState<'green' | 'amber' | 'red'>('green');
@@ -109,6 +111,14 @@ export const TrafficResults: React.FC<TrafficResultsProps> = ({
           icon={<Timer className="w-6 h-6" />}
           trend="based on rate-of-change"
           color="success"
+        />
+
+        <StatsCard
+          title="Vehicle Count"
+          value={typeof vehicleCount === 'number' ? vehicleCount : '—'}
+          icon={<CheckCircle className="w-6 h-6" />}
+          trend="unique vehicles detected"
+          color="warning"
         />
       </div>
 

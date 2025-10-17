@@ -209,9 +209,9 @@ class StreamProcessor:
 
 
 def analyze_video_file(model_coco: YOLO, source_path: str, vehicle_classes: Optional[set] = None,
-                       target_fps: float = 5.0, slope_window_seconds: int = 12,
+                       target_fps: float = 4.0, slope_window_seconds: int = 10,
                        annotated_output_path: Optional[str] = None,
-                       max_seconds: Optional[int] = 12) -> Dict[str, float]:
+                       max_seconds: Optional[int] = 8) -> Dict[str, float]:
     """
     Offline analysis for an uploaded video file. Returns summary metrics including
     vehiclesPerSecond (EMA) and rateOfChange (slope of cps over time).
@@ -241,6 +241,34 @@ def analyze_video_file(model_coco: YOLO, source_path: str, vehicle_classes: Opti
     # Determine stride for subsampling (process ~target_fps)
     stride = max(1, int(round(float(video_fps) / max(1.0, float(target_fps)))))
 
+    # --- Simple IoU-based multi-frame tracker to count unique vehicles once ---
+    next_track_id: int = 1
+    # track: {"id": int, "bbox": (x1,y1,x2,y2), "age": int, "last_second": int}
+    active_tracks: List[Dict[str, object]] = []
+    counted_track_ids: set = set()
+
+    def iou(boxA: Tuple[float, float, float, float], boxB: Tuple[float, float, float, float]) -> float:
+        xA = max(float(boxA[0]), float(boxB[0]))
+        yA = max(float(boxA[1]), float(boxB[1]))
+        xB = min(float(boxA[2]), float(boxB[2]))
+        yB = min(float(boxA[3]), float(boxB[3]))
+        interW = max(0.0, xB - xA)
+        interH = max(0.0, yB - yA)
+        interArea = interW * interH
+        if interArea <= 0.0:
+            return 0.0
+        boxAArea = max(0.0, float(boxA[2] - boxA[0])) * max(0.0, float(boxA[3] - boxA[1]))
+        boxBArea = max(0.0, float(boxB[2] - boxB[0])) * max(0.0, float(boxB[3] - boxB[1]))
+        denom = boxAArea + boxBArea - interArea
+        return float(interArea / denom) if denom > 0 else 0.0
+
+    # Require a track to be seen in at least this many processed frames before counting
+    min_confirm_age: int = 2
+    # If a track is not matched for this many seconds, drop it
+    max_unseen_seconds: int = 3
+
+    total_unique_vehicles: int = 0
+
     try:
         processed_seconds = 0
         while True:
@@ -260,19 +288,80 @@ def analyze_video_file(model_coco: YOLO, source_path: str, vehicle_classes: Opti
 
             detected_count = 0
             if process_this_frame:
-                results = model_coco.predict(
+                # Use Ultralytics built-in tracker for stable IDs to avoid double counting
+                results = model_coco.track(
                     frame,
                     imgsz=512,
-                    conf=0.3,
+                    conf=0.35,
                     classes=list(vehicle_classes),
                     device=("cuda" if torch.cuda.is_available() else "cpu"),
+                    persist=True,
                     verbose=False,
                 )[0]
-                detected_count = int(sum(1 for cls in results.boxes.cls if int(cls) in vehicle_classes))
+                # Filter by vehicle classes and count per-frame detections
+                if results.boxes is not None and len(results.boxes) > 0:
+                    classes_arr = results.boxes.cls
+                    ids_arr = getattr(results.boxes, 'id', None)
+                    xyxy = results.boxes.xyxy
+                    for idx in range(len(xyxy)):
+                        if int(classes_arr[idx]) not in vehicle_classes:
+                            continue
+                        detected_count += 1
+                        # Update age per track id, count once after confirmation age
+                        if ids_arr is not None and len(ids_arr) > idx and ids_arr[idx] is not None:
+                            tid = int(ids_arr[idx])
+                            # Age bookkeeping in a dict on the fly
+                            # We reuse active_tracks as a small map-like store
+                            found = False
+                            for tr in active_tracks:
+                                if int(tr["id"]) == tid:  # type: ignore[index]
+                                    tr["bbox"] = (float(xyxy[idx][0]), float(xyxy[idx][1]), float(xyxy[idx][2]), float(xyxy[idx][3]))  # type: ignore[index]
+                                    tr["age"] = int(tr.get("age", 0)) + 1  # type: ignore[index]
+                                    tr["last_second"] = int(current_second_index if current_second_index is not None else 0)  # type: ignore[index]
+                                    found = True
+                                    break
+                            if not found:
+                                active_tracks.append({
+                                    "id": tid,
+                                    "bbox": (float(xyxy[idx][0]), float(xyxy[idx][1]), float(xyxy[idx][2]), float(xyxy[idx][3])),
+                                    "age": 1,
+                                    "last_second": int(current_second_index if current_second_index is not None else 0)
+                                })
+
+                    # Count newly confirmed tracks exactly once (IDs are stable from tracker)
+                    for tr in active_tracks:
+                        tr_id = int(tr["id"])  # type: ignore[index]
+                        tr_age = int(tr.get("age", 0))  # type: ignore[arg-type]
+                        if tr_age >= 2 and tr_id not in counted_track_ids:
+                            counted_track_ids.add(tr_id)
+                            total_unique_vehicles += 1
+
+                    # Drop stale tracks that have not been seen for a while
+                    now_sec = int(current_second_index if current_second_index is not None else 0)
+                    pruned: List[Dict[str, object]] = []
+                    for tr in active_tracks:
+                        last_sec = int(tr.get("last_second", now_sec))  # type: ignore[arg-type]
+                        if (now_sec - last_sec) <= 3:
+                            pruned.append(tr)
+                    active_tracks = pruned
 
             # Create/write annotated frame if requested
             if annotated_output_path is not None and process_this_frame:
                 annotated_frame = results.plot()
+                # Overlay track IDs on annotated frame when available
+                try:
+                    if results.boxes is not None and len(results.boxes) > 0:
+                        ids_arr = getattr(results.boxes, 'id', None)
+                        xyxy = results.boxes.xyxy
+                        for idx in range(len(xyxy)):
+                            if ids_arr is None or len(ids_arr) <= idx or ids_arr[idx] is None:
+                                continue
+                            tid = int(ids_arr[idx])
+                            x1, y1, x2, y2 = [int(v) for v in xyxy[idx]]
+                            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
+                            cv2.putText(annotated_frame, f"ID {tid}", (x1, max(0, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+                except Exception:
+                    pass
                 if writer is None:
                     h_out, w_out = annotated_frame.shape[:2]
                     # Ensure even dimensions for codec compatibility
@@ -403,6 +492,7 @@ def analyze_video_file(model_coco: YOLO, source_path: str, vehicle_classes: Opti
         "dataPoints": float(len(per_second_counts)),
         "annotatedFrames": int(frames_written),
         "annotatedOutputPath": selected_output_path or "",
+        "vehicleCount": int(total_unique_vehicles),
     }
 
 

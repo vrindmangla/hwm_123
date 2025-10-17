@@ -1,15 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Activity, Zap } from 'lucide-react';
 import { TrafficUpload } from './TrafficUpload';
 import { TrafficResults } from './TrafficResults';
+import { TrafficResultsMulti } from './TrafficResultsMulti';
 import { SystemStatus } from './SystemStatus';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+
+interface LaneResult {
+  laneId: number;
+  signalTime: number;
+  vehiclesPerSecond?: number;
+  rateOfChange?: number;
+  annotatedVideo?: string;
+  vehicleCount?: number;
+  direction?: string;
+}
 
 interface DetectionResult {
   signalTime: number;
   vehiclesPerSecond?: number;
   rateOfChange?: number;
   annotatedVideo?: string;
+  vehicleCount?: number;
+  lanes?: LaneResult[];
 }
 
 type AppState = 'upload' | 'processing' | 'results';
@@ -18,6 +31,24 @@ export const TrafficDashboard: React.FC = () => {
   const [appState, setAppState] = useState<AppState>('upload');
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<DetectionResult | null>(null);
+
+  // Live clock (HH:MM:SS)
+  const formatTime = (date: Date): string => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const hh = pad(date.getHours());
+    const mm = pad(date.getMinutes());
+    const ss = pad(date.getSeconds());
+    return `${hh}:${mm}:${ss}`;
+  };
+
+  const [currentTime, setCurrentTime] = useState<string>(formatTime(new Date()));
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setCurrentTime(formatTime(new Date()));
+    }, 1000);
+    return () => clearInterval(intervalId);
+  }, []);
 
   const computeOptimizedGreenTime = (baseSeconds: number, rateOfChange?: number): number => {
     if (rateOfChange === undefined || rateOfChange === null || isNaN(rateOfChange)) {
@@ -56,6 +87,7 @@ export const TrafficDashboard: React.FC = () => {
         rateOfChange: vData.rateOfChange,
         signalTime: optimized,
         annotatedVideo: vData.annotatedVideo ? `http://localhost:5000${vData.annotatedVideo}` : undefined,
+        vehicleCount: typeof vData.vehicleCount === 'number' ? vData.vehicleCount : undefined,
       };
 
       resolve(baseResult);
@@ -66,12 +98,48 @@ export const TrafficDashboard: React.FC = () => {
 };
 
 
-  const handleFileUpload = async (video: File | null) => {
+  const simulateAIProcessingMulti = (lanes: { north?: File | null; south?: File | null; east?: File | null; west?: File | null; lane1?: File | null; lane2?: File | null; lane3?: File | null; lane4?: File | null }): Promise<DetectionResult> => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      setProgress(20);
+      const vForm = new FormData();
+      (['north','south','east','west','lane1','lane2','lane3','lane4'] as const).forEach(k => {
+        const f = lanes[k];
+        if (f) vForm.append(k, f);
+      });
+      const vResp = await fetch("http://localhost:5000/api/video/analyze-multi", {
+        method: "POST",
+        body: vForm,
+      });
+      if (!vResp.ok) throw new Error("Multi-lane analysis failed");
+      const vData = await vResp.json();
+
+      setProgress(100);
+      const lanesOut: LaneResult[] = (vData.lanes || []).map((ln: any, idx: number) => ({
+        laneId: typeof ln.laneId === 'number' ? ln.laneId : idx + 1,
+        signalTime: ln.signalTime,
+        vehiclesPerSecond: ln.vehiclesPerSecond,
+        rateOfChange: ln.rateOfChange,
+        annotatedVideo: ln.annotatedVideo ? `http://localhost:5000${ln.annotatedVideo}` : undefined,
+        vehicleCount: ln.vehicleCount,
+        direction: ln.direction,
+      }));
+      resolve({ signalTime: 0, lanes: lanesOut });
+    } catch (error) {
+      reject(error);
+    }
+  });
+};
+
+
+  const handleFileUpload = async (video: File | null, multi?: { north?: File | null; south?: File | null; east?: File | null; west?: File | null; lane1?: File | null; lane2?: File | null; lane3?: File | null; lane4?: File | null }) => {
     setAppState('processing');
     setProgress(0);
     
     try {
-      const result = await simulateAIProcessing(video);
+      const result = multi && (multi.north || multi.south || multi.east || multi.west || multi.lane1 || multi.lane2 || multi.lane3 || multi.lane4)
+        ? await simulateAIProcessingMulti(multi)
+        : await simulateAIProcessing(video);
       setResults(result);
       setAppState('results');
     } catch (error) {
@@ -106,9 +174,14 @@ export const TrafficDashboard: React.FC = () => {
               </div>
             </div>
             
-            <div className="flex items-center gap-2 text-sm">
-              <div className="w-2 h-2 bg-success rounded-full animate-pulse" />
-              <span className="text-success font-medium">System Online</span>
+            <div className="flex items-center gap-4 text-sm">
+              <span className="font-mono tabular-nums text-muted-foreground text-base min-w-[88px] text-right">
+                {currentTime}
+              </span>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-success rounded-full animate-pulse" />
+                <span className="text-success font-medium">System Online</span>
+              </div>
             </div>
           </div>
         </div>
@@ -168,13 +241,18 @@ export const TrafficDashboard: React.FC = () => {
             )}
 
             {appState === 'results' && results && (
-              <TrafficResults
-                signalTime={results.signalTime}
-                vehiclesPerSecond={results.vehiclesPerSecond}
-                rateOfChange={results.rateOfChange}
-                annotatedVideo={results.annotatedVideo}
-                onReset={handleReset}
-              />
+              results.lanes && results.lanes.length > 0 ? (
+                <TrafficResultsMulti lanes={results.lanes} onReset={handleReset} />
+              ) : (
+                <TrafficResults
+                  signalTime={results.signalTime}
+                  vehiclesPerSecond={results.vehiclesPerSecond}
+                  rateOfChange={results.rateOfChange}
+                  annotatedVideo={results.annotatedVideo}
+                  vehicleCount={results.vehicleCount}
+                  onReset={handleReset}
+                />
+              )
             )}
           </div>
 
