@@ -2,6 +2,7 @@ import React from 'react';
 import { TrendingUp, CheckCircle, Timer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatsCard } from './StatsCard';
+import { TrafficLight } from './TrafficLight';
 
 interface LaneResult {
   laneId: number;
@@ -129,8 +130,18 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
           north,
           'NORTH',
           (
-            <div className={`${currentPhase === 'NS' ? 'text-success' : 'text-muted-foreground'} text-sm font-medium`}>
-              NS TIMER: {currentPhase === 'NS' ? formatTimer(timeLeft) : formatTimer(nsTime)}
+            <div className="flex items-center gap-2">
+              <TrafficLight
+                compact
+                currentPhase={
+                  currentPhase === 'NS'
+                    ? (timeLeft > 5 ? 'green' : (timeLeft > 0 ? 'amber' : 'red'))
+                    : 'red'
+                }
+              />
+              <div className={`${currentPhase === 'NS' ? 'text-success' : 'text-muted-foreground'} text-sm font-medium`}>
+                NS TIMER: {currentPhase === 'NS' ? formatTimer(timeLeft) : formatTimer(nsTime)}
+              </div>
             </div>
           )
         )}</div>
@@ -148,7 +159,25 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
         )}</div>
         <div className="flex items-center justify-center text-xs text-muted-foreground">Intersection</div>
         {/* East */}
-        <div>{renderCard(east, 'EAST')}</div>
+        <div>{renderCard(
+          east,
+          'EAST',
+          (
+            <div className="flex items-center gap-2">
+              <div className={`${currentPhase === 'EW' ? 'text-success' : 'text-muted-foreground'} text-sm font-medium`}> 
+                EW TIMER: {currentPhase === 'EW' ? formatTimer(timeLeft) : formatTimer(ewTime)}
+              </div>
+              <TrafficLight
+                compact
+                currentPhase={
+                  currentPhase === 'EW'
+                    ? (timeLeft > 5 ? 'green' : (timeLeft > 0 ? 'amber' : 'red'))
+                    : 'red'
+                }
+              />
+            </div>
+          )
+        )}</div>
 
         <div />
         {/* South */}
