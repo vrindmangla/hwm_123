@@ -26,11 +26,11 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
   const east = getByDir('east');
   const west = getByDir('west');
 
-  // Compute synchronized pair times (backend already syncs, but we guard here)
   const nsTime = Math.max(
     typeof north?.signalTime === 'number' ? north.signalTime : 0,
     typeof south?.signalTime === 'number' ? south.signalTime : 0,
   );
+
   const ewTime = Math.max(
     typeof east?.signalTime === 'number' ? east.signalTime : 0,
     typeof west?.signalTime === 'number' ? west.signalTime : 0,
@@ -39,11 +39,10 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
   const initialPhase: 'NS' | 'EW' = nsTime >= ewTime ? 'NS' : 'EW';
   const [currentPhase, setCurrentPhase] = React.useState<'NS' | 'EW'>(initialPhase);
   const [timeLeft, setTimeLeft] = React.useState<number>(initialPhase === 'NS' ? nsTime : ewTime);
-  const [phaseIndex, setPhaseIndex] = React.useState<number>(0); // 0 -> first pair, 1 -> second pair
+  const [phaseIndex, setPhaseIndex] = React.useState<number>(0);
   const [isComplete, setIsComplete] = React.useState<boolean>(false);
 
   React.useEffect(() => {
-    // Reset timers if inputs change
     const startPhase: 'NS' | 'EW' = nsTime >= ewTime ? 'NS' : 'EW';
     setCurrentPhase(startPhase);
     setPhaseIndex(0);
@@ -53,8 +52,8 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
 
   React.useEffect(() => {
     if (isComplete) return;
+
     if (!Number.isFinite(timeLeft) || timeLeft <= 0) {
-      // Switch to the other phase or mark complete
       if (phaseIndex === 0) {
         const nextPhase: 'NS' | 'EW' = currentPhase === 'NS' ? 'EW' : 'NS';
         setCurrentPhase(nextPhase);
@@ -65,6 +64,7 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
       }
       return;
     }
+
     const t = setInterval(() => setTimeLeft(prev => (prev > 0 ? prev - 1 : 0)), 1000);
     return () => clearInterval(t);
   }, [timeLeft, currentPhase, phaseIndex, nsTime, ewTime, isComplete]);
@@ -75,36 +75,36 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
     return `${v}s`;
   };
 
-  const renderCard = (ln?: LaneResult, title?: string, rightExtra?: React.ReactNode) => (
+  const renderCompactCard = (ln?: LaneResult, title?: string, rightExtra?: React.ReactNode) => (
     <Card className="bg-gradient-card border-border shadow-card">
       <CardHeader>
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-sm">
             {title || (ln?.direction ? ln.direction.toUpperCase() : `Lane ${ln?.laneId ?? ''}`)}
           </CardTitle>
           {rightExtra}
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <StatsCard
             title="Rate of Change"
             value={typeof ln?.rateOfChange === 'number' ? ln?.rateOfChange.toFixed(3) : '—'}
-            icon={<TrendingUp className="w-6 h-6" />}
+            icon={<TrendingUp className="w-5 h-5" />}
             trend="vehicles/sec²"
             color="primary"
           />
           <StatsCard
             title="Optimized Green Time"
             value={typeof ln?.signalTime === 'number' ? `${ln?.signalTime}s` : '—'}
-            icon={<Timer className="w-6 h-6" />}
+            icon={<Timer className="w-5 h-5" />}
             trend="per-direction"
             color="success"
           />
           <StatsCard
             title="Vehicle Count"
             value={typeof ln?.vehicleCount === 'number' ? ln?.vehicleCount : '—'}
-            icon={<CheckCircle className="w-6 h-6" />}
+            icon={<CheckCircle className="w-5 h-5" />}
             trend="unique vehicles"
             color="warning"
           />
@@ -112,7 +112,7 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
 
         <div>
           {ln?.annotatedVideo ? (
-            <video src={ln.annotatedVideo} className="w-full h-64 object-cover" controls />
+            <video src={ln.annotatedVideo} className="w-full h-36 object-cover" controls />
           ) : (
             <div className="text-sm text-muted-foreground">Annotated video will appear here after processing.</div>
           )}
@@ -123,10 +123,9 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6 animate-fade-in-up">
-      <div className="grid grid-cols-3 gap-6">
-        <div />
-        {/* North */}
-        <div>{renderCard(
+      {/* Compact 2x2 grid so all lanes are visible without vertical scrolling */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>{renderCompactCard(
           north,
           'NORTH',
           (
@@ -139,33 +138,20 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
                     : 'red'
                 }
               />
-              <div className={`${currentPhase === 'NS' ? 'text-success' : 'text-muted-foreground'} text-sm font-medium`}>
-                NS TIMER: {currentPhase === 'NS' ? formatTimer(timeLeft) : formatTimer(nsTime)}
+              <div className={`${currentPhase === 'NS' ? 'text-success' : 'text-muted-foreground'} text-xs font-medium`}>
+                NS: {currentPhase === 'NS' ? formatTimer(timeLeft) : formatTimer(nsTime)}
               </div>
             </div>
           )
         )}</div>
-        <div />
 
-        {/* West */}
-        <div>{renderCard(
-          west,
-          'WEST',
-          (
-            <div className={`${currentPhase === 'EW' ? 'text-success' : 'text-muted-foreground'} text-sm font-medium`}>
-              EW TIMER: {currentPhase === 'EW' ? formatTimer(timeLeft) : formatTimer(ewTime)}
-            </div>
-          )
-        )}</div>
-        <div className="flex items-center justify-center text-xs text-muted-foreground">Intersection</div>
-        {/* East */}
-        <div>{renderCard(
+        <div>{renderCompactCard(
           east,
           'EAST',
           (
             <div className="flex items-center gap-2">
-              <div className={`${currentPhase === 'EW' ? 'text-success' : 'text-muted-foreground'} text-sm font-medium`}> 
-                EW TIMER: {currentPhase === 'EW' ? formatTimer(timeLeft) : formatTimer(ewTime)}
+              <div className={`${currentPhase === 'EW' ? 'text-success' : 'text-muted-foreground'} text-xs font-medium`}> 
+                EW: {currentPhase === 'EW' ? formatTimer(timeLeft) : formatTimer(ewTime)}
               </div>
               <TrafficLight
                 compact
@@ -179,11 +165,10 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
           )
         )}</div>
 
-        <div />
-        {/* South */}
-        <div>{renderCard(south, 'SOUTH')}</div>
-        <div />
+        <div>{renderCompactCard(south, 'SOUTH')}</div>
+        <div>{renderCompactCard(west, 'WEST')}</div>
       </div>
     </div>
   );
 };
+
