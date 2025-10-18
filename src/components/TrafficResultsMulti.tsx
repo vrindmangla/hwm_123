@@ -3,6 +3,7 @@ import { TrendingUp, CheckCircle, Timer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatsCard } from './StatsCard';
 import { TrafficLight } from './TrafficLight';
+import { RealisticTrafficSimulation } from './RealisticTrafficSimulation';
 
 interface LaneResult {
   laneId: number;
@@ -125,49 +126,65 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
     <div className="w-full max-w-6xl mx-auto space-y-6 animate-fade-in-up">
       {/* Compact 2x2 grid so all lanes are visible without vertical scrolling */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>{renderCompactCard(
-          north,
-          'NORTH',
-          (
-            <div className="flex items-center gap-2">
+        <div>{renderCompactCard(north, 'NORTH')}</div>
+
+        <div>{renderCompactCard(east, 'EAST')}</div>
+
+        <div>{renderCompactCard(south, 'SOUTH')}</div>
+        <div>{renderCompactCard(west, 'WEST')}</div>
+      </div>
+
+      {/* Traffic Light Control Box */}
+      <Card className="bg-gradient-card border-border shadow-card">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            Traffic Light Control
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center gap-8">
+            {/* North-South Traffic Light */}
+            <div className="flex flex-col items-center gap-2">
               <TrafficLight
-                compact
                 currentPhase={
                   currentPhase === 'NS'
                     ? (timeLeft > 5 ? 'green' : (timeLeft > 0 ? 'amber' : 'red'))
                     : 'red'
                 }
               />
-              <div className={`${currentPhase === 'NS' ? 'text-success' : 'text-muted-foreground'} text-xs font-medium`}>
-                NS: {currentPhase === 'NS' ? formatTimer(timeLeft) : formatTimer(nsTime)}
+              <div className={`${currentPhase === 'NS' ? 'text-success' : 'text-muted-foreground'} text-sm font-medium`}>
+                North-South: {currentPhase === 'NS' ? formatTimer(timeLeft) : formatTimer(nsTime)}
               </div>
             </div>
-          )
-        )}</div>
 
-        <div>{renderCompactCard(
-          east,
-          'EAST',
-          (
-            <div className="flex items-center gap-2">
-              <div className={`${currentPhase === 'EW' ? 'text-success' : 'text-muted-foreground'} text-xs font-medium`}> 
-                EW: {currentPhase === 'EW' ? formatTimer(timeLeft) : formatTimer(ewTime)}
-              </div>
+            {/* East-West Traffic Light */}
+            <div className="flex flex-col items-center gap-2">
               <TrafficLight
-                compact
                 currentPhase={
                   currentPhase === 'EW'
                     ? (timeLeft > 5 ? 'green' : (timeLeft > 0 ? 'amber' : 'red'))
                     : 'red'
                 }
               />
+              <div className={`${currentPhase === 'EW' ? 'text-success' : 'text-muted-foreground'} text-sm font-medium`}>
+                East-West: {currentPhase === 'EW' ? formatTimer(timeLeft) : formatTimer(ewTime)}
+              </div>
             </div>
-          )
-        )}</div>
+          </div>
+        </CardContent>
+      </Card>
 
-        <div>{renderCompactCard(south, 'SOUTH')}</div>
-        <div>{renderCompactCard(west, 'WEST')}</div>
-      </div>
+      {/* Realistic Traffic Simulation */}
+      <Card className="bg-gradient-card border-border shadow-card">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            Realistic Traffic Intersection Simulation
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <RealisticTrafficSimulation currentPhase={currentPhase} timeLeft={timeLeft} />
+        </CardContent>
+      </Card>
     </div>
   );
 };
