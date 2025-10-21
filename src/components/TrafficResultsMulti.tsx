@@ -3,7 +3,6 @@ import { TrendingUp, CheckCircle, Timer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatsCard } from './StatsCard';
 import { TrafficLight } from './TrafficLight';
-import { TrafficSimulation } from './TrafficSimulation';
 
 interface LaneResult {
   laneId: number;
@@ -80,7 +79,7 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
     <Card className="bg-gradient-card border-border shadow-card">
       <CardHeader>
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="flex items-center gap-2 text-sm">
+          <CardTitle className="flex items-center gap-2 text-lg font-bold">
             {title || (ln?.direction ? ln.direction.toUpperCase() : `Lane ${ln?.laneId ?? ''}`)}
           </CardTitle>
           {rightExtra}
@@ -192,15 +191,6 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
           </div>
         </CardContent>
       </Card>
-
-      {/* Real Time Traffic Simulation */}
-      <TrafficSimulation
-        nsTime={nsTime}
-        ewTime={ewTime}
-        onSimulationComplete={() => {
-          console.log('Simulation completed - both NS and EW signals are red');
-        }}
-      />
     </div>
   );
 };
