@@ -3,7 +3,7 @@ import { TrendingUp, CheckCircle, Timer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatsCard } from './StatsCard';
 import { TrafficLight } from './TrafficLight';
-import { RealisticTrafficSimulation } from './RealisticTrafficSimulation';
+import { TrafficSimulation } from './TrafficSimulation';
 
 interface LaneResult {
   laneId: number;
@@ -134,17 +134,19 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
         <div>{renderCompactCard(west, 'WEST')}</div>
       </div>
 
-      {/* Traffic Light Control Box */}
+      {/* Traffic Light Control Section */}
       <Card className="bg-gradient-card border-border shadow-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
+            <Timer className="w-5 h-5" />
             Traffic Light Control
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-center gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* North-South Traffic Light */}
-            <div className="flex flex-col items-center gap-2">
+            <div className="flex flex-col items-center space-y-4">
+              <div className="text-lg font-semibold text-center">North-South</div>
               <TrafficLight
                 currentPhase={
                   currentPhase === 'NS'
@@ -152,13 +154,22 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
                     : 'red'
                 }
               />
-              <div className={`${currentPhase === 'NS' ? 'text-success' : 'text-muted-foreground'} text-sm font-medium`}>
-                North-South: {currentPhase === 'NS' ? formatTimer(timeLeft) : formatTimer(nsTime)}
+              <div className="text-center space-y-2">
+                <div className={`text-2xl font-bold ${currentPhase === 'NS' ? 'text-success' : 'text-muted-foreground'}`}>
+                  {currentPhase === 'NS' ? timeLeft : nsTime}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {currentPhase === 'NS' ? 'seconds remaining' : 'seconds total'}
+                </div>
+                <div className={`text-xs font-medium ${currentPhase === 'NS' ? 'text-success' : 'text-muted-foreground'}`}>
+                  {currentPhase === 'NS' ? 'ACTIVE' : 'INACTIVE'}
+                </div>
               </div>
             </div>
 
             {/* East-West Traffic Light */}
-            <div className="flex flex-col items-center gap-2">
+            <div className="flex flex-col items-center space-y-4">
+              <div className="text-lg font-semibold text-center">East-West</div>
               <TrafficLight
                 currentPhase={
                   currentPhase === 'EW'
@@ -166,26 +177,30 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
                     : 'red'
                 }
               />
-              <div className={`${currentPhase === 'EW' ? 'text-success' : 'text-muted-foreground'} text-sm font-medium`}>
-                East-West: {currentPhase === 'EW' ? formatTimer(timeLeft) : formatTimer(ewTime)}
+              <div className="text-center space-y-2">
+                <div className={`text-2xl font-bold ${currentPhase === 'EW' ? 'text-success' : 'text-muted-foreground'}`}>
+                  {currentPhase === 'EW' ? timeLeft : ewTime}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {currentPhase === 'EW' ? 'seconds remaining' : 'seconds total'}
+                </div>
+                <div className={`text-xs font-medium ${currentPhase === 'EW' ? 'text-success' : 'text-muted-foreground'}`}>
+                  {currentPhase === 'EW' ? 'ACTIVE' : 'INACTIVE'}
+                </div>
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Realistic Traffic Simulation */}
-      <Card className="bg-gradient-card border-border shadow-card">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            Realistic Traffic Intersection Simulation
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <RealisticTrafficSimulation currentPhase={currentPhase} timeLeft={timeLeft} />
-        </CardContent>
-      </Card>
+      {/* Real Time Traffic Simulation */}
+      <TrafficSimulation
+        nsTime={nsTime}
+        ewTime={ewTime}
+        onSimulationComplete={() => {
+          console.log('Simulation completed - both NS and EW signals are red');
+        }}
+      />
     </div>
   );
 };
-
